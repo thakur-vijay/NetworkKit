@@ -1,307 +1,287 @@
 # NetworkKit
 
-A modern Swift networking layer for iOS apps that emphasizes type-safe endpoints, clean configuration, async/await-first request flows, and production-friendly behaviors such as retries, caching, auth-aware request building, and request/response interception.
+A modern Swift networking library for iOS apps, built around type-safe endpoints, async/await-first requests, configurable environments, and practical HTTP features including caching, retries, authentication integration, and request/response interception. NetworkKit also supports WebSocket connections.
 
 <p align="center">
   <img alt="NetworkKit" src="https://img.shields.io/badge/Swift-6.0-orange?logo=swift&logoColor=white" />
   <img alt="Platform" src="https://img.shields.io/badge/iOS-15%2B-3B82F6" />
   <img alt="Async" src="https://img.shields.io/badge/Async%2FAwait-supported-10B981" />
   <img alt="Combine" src="https://img.shields.io/badge/Combine-supported-8B5CF6" />
+  <img alt="WebSocket" src="https://img.shields.io/badge/WebSocket-supported-0EA5E9" />
 </p>
 
 ## Why NetworkKit
 
-- Strongly typed API contracts via `Endpoint`
-- Async-first default with `try await` support
-- Combine bridge via `publisher(_:)`
-- Configurable environments and per-request policies
-- Automatic token refresh support for authenticated APIs
-- Cache-aware request handling with TTL-based cache policies
-- Retry support with customizable backoff strategies
-- Request and response interceptors for logging, signing, auditing, and validation
-- JSON decoding integration with custom encoder setup
-
----
+- Define API contracts with strongly typed `Endpoint` types.
+- Make requests with Swift concurrency or use the Combine publisher bridge.
+- Configure development, staging, production, and custom environments.
+- Use built-in cache policies and configurable retry behavior.
+- Integrate app-owned token storage and token-refresh flows.
+- Adapt outgoing requests and observe responses with interceptors.
+- Encode JSON, raw data, URL-encoded forms, and multipart forms.
+- Open WebSocket connections and send or receive messages.
 
 ## Installation
 
 ### Swift Package Manager
 
-Add NetworkKit as a dependency in your Xcode project:
+Add NetworkKit in Xcode using **File → Add Package Dependencies…** and enter:
 
-1. Open your app target in Xcode
-2. Go to File → Add Package Dependencies...
-3. Enter the repository URL for NetworkKit
-4. Select the version or branch you want to use
-5. Add the package to your app target
+```text
+https://github.com/thakur-vijay/NetworkKit.git
+```
 
-Example package declaration:
+Select a released version and add the `NetworkKit` product to your app target.
+
+You can also declare the dependency in a Swift package manifest. Replace `1.0.0` with the release version you want to use:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/your-org/NetworkKit.git", from: "1.0.0")
+    .package(
+        url: "https://github.com/thakur-vijay/NetworkKit.git",
+        from: "1.0.0"
+    )
 ]
 ```
 
-Then import it in your Swift code:
+Then import the library:
 
 ```swift
 import NetworkKit
 ```
-
----
-
-## Core concepts
-
-### Endpoint
-
-Every API contract should be represented as an endpoint type:
-
-```swift
-import NetworkKit
-
-struct UserEndpoint: Endpoint {
-    typealias Response = UserResponse
-
-    let userID: String
-
-    var path: String { "/users/\(userID)" }
-    var method: HTTPMethod { .get }
-    var requiresAuth: Bool { true }
-    var cachePolicy: RequestCachePolicy { .returnCacheDataElseFetch }
-}
-```
-
-### NetworkClient
-
-`NetworkClient` is the main entry point for making requests:
-
-```swift
-let resolver = DefaultEnvironmentResolver { env in
-    switch env {
-    case .development:
-        return AppEnvironmentConfig(baseURL: "https://api.dev.example.com")
-    case .staging:
-        return AppEnvironmentConfig(baseURL: "https://api.staging.example.com")
-    case .production:
-        return AppEnvironmentConfig(baseURL: "https://api.example.com")
-    case .custom:
-        return AppEnvironmentConfig(baseURL: "https://api.example.com")
-    }
-}
-
-let client = NetworkClient(configuration: .init(
-    environment: .production,
-    resolver: resolver,
-    logger: NetworkLogger(),
-    retryPolicy: ExponentialBackoffRetryPolicy()
-))
-```
-
----
 
 ## Quick start
 
-### 1. Define your response model
+### 1. Define a response model
 
 ```swift
-struct UserResponse: Decodable, Sendable {
+struct User: Decodable, Sendable {
     let id: String
     let name: String
     let email: String
 }
 ```
 
-### 2. Create an endpoint
+### 2. Define an endpoint
 
 ```swift
 struct FetchUserEndpoint: Endpoint {
-    typealias Response = UserResponse
+    typealias Response = User
 
     let userID: String
 
     var path: String { "/users/\(userID)" }
     var method: HTTPMethod { .get }
-    var requiresAuth: Bool { true }
+    var requiresAuth: Bool { false }
 }
 ```
 
-### 3. Send the request
+Endpoints default to requiring authentication. Set `requiresAuth` to `false` for public endpoints; protected endpoints need an appropriate auth configuration.
+
+### 3. Configure and use a client
 
 ```swift
-let endpoint = FetchUserEndpoint(userID: "123")
+let resolver = DefaultEnvironmentResolver { environment in
+    switch environment {
+    case .development:
+        AppEnvironmentConfig(baseURL: "https://api.dev.example.com")
+    case .staging:
+        AppEnvironmentConfig(baseURL: "https://api.staging.example.com")
+    case .production:
+        AppEnvironmentConfig(baseURL: "https://api.example.com")
+    case .custom:
+        AppEnvironmentConfig(baseURL: "https://api.example.com")
+    }
+}
 
-let user = try await client.request(endpoint)
+let configuration = NetworkClientConfiguration(
+    environment: .production,
+    resolver: resolver
+)
+let client = URLSessionNetworkClient(configuration: configuration)
+
+let user = try await client.request(FetchUserEndpoint(userID: "123"))
 print(user.name)
 ```
 
----
+## Request options
 
-## Request methods
-
-### Async/await
+### Async/await and raw data
 
 ```swift
-let users: [User] = try await client.request(GetUsersEndpoint())
+let user = try await client.request(FetchUserEndpoint(userID: "123"))
+let data = try await client.requestData(FetchUserEndpoint(userID: "123"))
 ```
 
-### Raw data
-
-```swift
-let data = try await client.requestData(GetUsersEndpoint())
-```
+The client also provides `requestData(_ url: URL)` when a typed endpoint is not needed.
 
 ### Combine
 
 ```swift
 let cancellable = client
-    .publisher(GetUsersEndpoint())
-    .sink(receiveCompletion: { completion in
-        switch completion {
-        case .finished:
-            break
-        case .failure(let error):
-            print(error.localizedDescription)
+    .publisher(FetchUserEndpoint(userID: "123"))
+    .sink(
+        receiveCompletion: { completion in
+            if case .failure(let error) = completion {
+                print(error.localizedDescription)
+            }
+        },
+        receiveValue: { user in
+            print(user.name)
         }
-    }, receiveValue: { user in
-        print(user)
-    })
+    )
 ```
 
----
+### HTTP methods, headers, and query items
 
-## Headers, methods, and bodies
-
-### HTTP methods
+Available methods are `.get`, `.post`, `.put`, `.patch`, `.delete`, and `.head`.
 
 ```swift
-public enum HTTPMethod: String, Sendable {
-    case get, post, put, patch, delete, head
+struct SearchEndpoint: Endpoint {
+    typealias Response = [User]
+
+    let searchTerm: String
+
+    var path: String { "/users" }
+    var method: HTTPMethod { .get }
+    var requiresAuth: Bool { false }
+    var headers: [HTTPHeader] {
+        [.accept(.json), .userAgent("MyApp/1.0")]
+    }
+    var queryItems: [URLQueryItem]? {
+        [URLQueryItem(name: "q", value: searchTerm)]
+    }
 }
 ```
 
-### Common headers
-
-```swift
-let headers: [HTTPHeader] = [
-    .accept(.json),
-    .contentType(.json),
-    .userAgent("MyApp/1.0")
-]
-```
+Use `HTTPHeader(name:value:)` for application-specific headers. Keep credentials in secure app-managed storage and avoid placing secrets in source-controlled endpoint definitions.
 
 ### Request bodies
 
 ```swift
-struct CreateUserRequest: Encodable {
+struct CreateUserBody: Encodable {
     let name: String
     let email: String
 }
 
 struct CreateUserEndpoint: Endpoint {
-    typealias Response = UserResponse
+    typealias Response = User
 
-    let payload: CreateUserRequest
+    let payload: CreateUserBody
 
     var path: String { "/users" }
     var method: HTTPMethod { .post }
+    var requiresAuth: Bool { false }
     var body: RequestBody? { .json(payload) }
-    var requiresAuth: Bool { true }
 }
 ```
 
-Supported body styles:
+Supported body types:
 
 - `.json(Encodable)`
-- `.raw(Data, contentType: .json)`
+- `.raw(Data, contentType:)`
 - `.formURLEncoded([String: String])`
 - `.multipart(MultipartFormData)`
 
----
+For multipart data, create `MultipartFormData.Part` values with a field name, MIME type, bytes, and an optional filename.
 
-## Cache and retry policies
+## Environments and configuration
 
-### Cache policies
+Use `DefaultEnvironmentResolver` to map `AppEnvironment` cases to `AppEnvironmentConfig` values. Each configuration includes a base URL, request timeout, default headers, an optional `URLCache`, and a logging-related setting.
+
+`NetworkClientConfiguration` also accepts:
+
+- An optional authentication manager.
+- A retry policy.
+- A cache manager.
+- Request and response interceptors.
+- An optional logger.
+- A response `JSONDecoder`.
+
+The default request encoder uses snake-case keys and ISO-8601 dates. The response decoder is configurable; set its key/date strategies to match your API.
+
+## Caching and retries
+
+Available endpoint cache policies:
 
 ```swift
-var cachePolicy: RequestCachePolicy {
-    .fetchAndCache(ttl: 300)
-}
+.reloadIgnoringCache
+.returnCacheDataElseFetch
+.returnCacheDataDontLoad
+.fetchAndCache(ttl: 300)
 ```
 
-Available policies:
+The built-in cache stores eligible GET responses. Choose a policy based on freshness requirements, and avoid caching account-specific data in a cache shared across user sessions.
 
-- `.reloadIgnoringCache`
-- `.returnCacheDataElseFetch`
-- `.returnCacheDataDontLoad`
-- `.fetchAndCache(ttl:)`
-
-### Retry policy
+Retry behavior is configurable through `RetryPolicy`. `ExponentialBackoffRetryPolicy` provides exponential delays with jitter; `NoRetryPolicy` disables automatic retries.
 
 ```swift
-let policy = ExponentialBackoffRetryPolicy(
-    maxAttempts: 3,
-    baseDelay: 1.0,
-    maxDelay: 10.0
+let configuration = NetworkClientConfiguration(
+    environment: .production,
+    resolver: resolver,
+    retryPolicy: ExponentialBackoffRetryPolicy(
+        maxAttempts: 3,
+        baseDelay: 1,
+        maxDelay: 10
+    )
 )
 ```
 
-`RetryPolicy` allows you to control which network errors are retryable and how long to wait between attempts.
+Retries are intended for transient network and server failures. Ensure requests that your app retries are safe to repeat, especially for endpoints that create or modify server-side resources.
 
----
+## Authentication integration
 
-## Environments
+Endpoints declare whether authentication is required. NetworkKit provides integration points for app-owned token storage and a refresh-token endpoint, so authentication policy and credential persistence remain under application control.
+
+Before relying on automatic bearer-token injection or refresh behavior in a production app, validate the complete flow against your API and the exact NetworkKit release you integrate. Apps can also provide their own authorization header or request interceptor when they need custom credential behavior.
+
+## Interceptors and logging
+
+Request interceptors can adapt outgoing requests; response interceptors can inspect completed HTTP responses. They are useful for signing, app-specific headers, auditing, analytics, and validation.
+
+`NetworkLogger` can log request and response information when enabled. Review what data your application sends before enabling body logging: headers may contain credentials and bodies may contain personal or confidential data.
+
+## WebSocket
+
+Use `URLSessionWebSocketClient` for WebSocket connections. It takes a `URLRequest`, supports sending and receiving `URLSessionWebSocketTask.Message` values, and exposes open and close callbacks.
 
 ```swift
-public enum AppEnvironment: Sendable {
-    case development
-    case staging
-    case production
-    case custom
+import Foundation
+import NetworkKit
+
+func connectToUpdates(using configuration: NetworkClientConfiguration) async throws {
+    guard let url = URL(string: "wss://api.example.com/updates") else {
+        throw NetworkError.invalidURL("wss://api.example.com/updates")
+    }
+
+    let socket = URLSessionWebSocketClient(configuration: configuration)
+    socket.onOpen = {
+        print("Connected")
+    }
+    socket.onClose = { code, _ in
+        print("Closed: \(code)")
+    }
+
+    try await socket.connect(URLRequest(url: url))
+    try await socket.send(.string("subscribe"))
+
+    let message = try await socket.receive()
+    if case .string(let text) = message {
+        print(text)
+    }
+
+    socket.disconnect()
 }
 ```
 
-```swift
-public struct AppEnvironmentConfig: Sendable {
-    public let baseURL: String
-    public let timeout: TimeInterval
-    public let defaultHeaders: [HTTPHeader]
-    public let isLoggingEnabled: Bool
-    public let urlCache: URLCache?
-}
-```
-
-```swift
-public protocol AppEnvironmentResolving: Sendable {
-    func resolve(_ environment: AppEnvironment) -> AppEnvironmentConfig
-}
-```
-
----
-
-## Authentication and auth-aware calls
-
-When an endpoint requires authentication and a token is available, the request builder attaches the bearer token automatically.
-
-```swift
-struct SecureEndpoint: Endpoint {
-    typealias Response = ProfileResponse
-
-    var path: String { "/profile" }
-    var method: HTTPMethod { .get }
-    var requiresAuth: Bool { true }
-}
-```
-
-If the API returns `401`, the SDK can refresh tokens through the configured auth flow.
-
----
+WebSocket reconnection and message-loop policy are app-managed. Provide any handshake headers through the request you pass to `connect`.
 
 ## Error handling
 
 ```swift
 do {
     let user = try await client.request(FetchUserEndpoint(userID: "123"))
+    print(user.name)
 } catch let error as NetworkError {
     print(error.localizedDescription)
 } catch {
@@ -309,83 +289,28 @@ do {
 }
 ```
 
-Common error cases include:
+`NetworkError` includes cases for invalid URLs, request encoding, missing auth tokens, HTTP status failures, decoding failures, empty responses, transport errors, cancellation, token refresh, and cache misses.
 
-- `.invalidURL(_:)`
-- `.missingAuthToken`
-- `.unauthorized`
-- `.forbidden`
-- `.notFound`
-- `.serverError(statusCode:)`
-- `.decodingFailed(_:)`
-- `.timeout`
-- `.noInternetConnection`
-- `.tokenRefreshFailed`
-- `.cacheError(_:)`
+## API overview
 
----
-
-## Logging and interceptors
-
-You can provide a logger and request/response interceptors during client setup:
-
-```swift
-let logger = NetworkLogger(subsystem: "MyApp.Network")
-
-let client = NetworkClient(configuration: .init(
-    environment: .development,
-    resolver: resolver,
-    requestInterceptors: [logger],
-    responseInterceptors: [],
-    logger: logger
-))
-```
-
-This is useful for:
-
-- request tracing
-- signing headers
-- authorization propagation
-- analytics hooks
-- custom validation
-
----
-
-## Recommended patterns
-
-- Keep endpoints as lightweight enums or structs
-- Keep response models decodable and `Sendable`
-- Prefer `requiresAuth` over manually attaching auth in each request
-- Use `cachePolicy` for read-heavy endpoints
-- Use explicit `RetryPolicy` for flaky or mobile network conditions
-- Keep environment configuration centralized in one resolver
-
----
-
-## API surface at a glance
-
-- `NetworkClient`
-- `NetworkClientProtocol`
+- `NetworkClient` and `URLSessionNetworkClient`
+- `WebSocketClient` and `URLSessionWebSocketClient`
+- `Endpoint`, `HTTPMethod`, and `HTTPHeader`
+- `RequestBody` and `MultipartFormData`
+- `AppEnvironment`, `AppEnvironmentConfig`, and `AppEnvironmentResolving`
 - `NetworkClientConfiguration`
-- `Endpoint`
-- `AppEnvironment`
-- `AppEnvironmentConfig`
-- `AppEnvironmentResolving`
-- `DefaultEnvironmentResolver`
-- `HTTPHeader`
-- `HTTPMethod`
-- `RequestBody`
-- `RequestCachePolicy`
-- `RetryPolicy`
-- `ExponentialBackoffRetryPolicy`
-- `NoRetryPolicy`
+- `RequestCachePolicy` and `CacheManaging`
+- `RetryPolicy`, `ExponentialBackoffRetryPolicy`, and `NoRetryPolicy`
+- `RequestInterceptor` and `ResponseInterceptor`
+- `NetworkLogging` and `NetworkLogger`
 - `NetworkError`
 
----
+## Recommended practices
 
-## Notes
-
-NetworkKit is designed to be straightforward for app teams: define endpoints, configure a client once, and let the SDK handle the mechanics of networking, decoding, auth, retries, and caching.
-
-If you are a contributor or maintaining the library, see [README_INTERNAL.md](README_INTERNAL.md).
-
+- Keep endpoints small and define one clear API operation per endpoint type.
+- Use response models that conform to both `Decodable` and `Sendable`.
+- Explicitly mark unauthenticated endpoints with `requiresAuth == false`.
+- Centralize environment configuration and keep production credentials out of source.
+- Select cache policies based on the sensitivity and freshness needs of the data.
+- Use retries only where repeating the request is safe.
+- Validate auth, logging, and WebSocket behavior against your service before release.
