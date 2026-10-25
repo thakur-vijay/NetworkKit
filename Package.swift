@@ -15,8 +15,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "NetworkKit",
-            url: "https://github.com/thakur-vijay/NetworkKit/releases/download/1.2.6/NetworkKit.xcframework.zip",
-            checksum: "1a18af9ba041d51cc5bdd09c494952771a3e73a7221182db4be46738cbbbf71d"
+            url: "https://github.com/thakur-vijay/NetworkKit/releases/download/1.2.7/NetworkKit.xcframework.zip",
+            checksum: "4beb5ae5fa490edbcae16650c3d6428f38ef531f938d0391495eb111f8f02bca"
         )
     ],
 
