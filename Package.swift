@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 
 import PackageDescription
 
@@ -15,8 +15,8 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "NetworkKit",
-            url: "https://github.com/thakur-vijay/NetworkKit/releases/download/1.2.5/NetworkKit.xcframework.zip",
-            checksum: "f396bcd8c0d6ed4c2c21a700e50515d21ce194aed0fd28f8647c224781e15d92"
+            url: "https://github.com/thakur-vijay/NetworkKit/releases/download/1.2.6/NetworkKit.xcframework.zip",
+            checksum: "1a18af9ba041d51cc5bdd09c494952771a3e73a7221182db4be46738cbbbf71d"
         )
     ],
 
